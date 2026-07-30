@@ -97,7 +97,7 @@ async def _execute_nu_zh(matcher: type[Matcher], payload: str) -> None:
 
 async def _execute_hunt_calendar(matcher: type[Matcher], payload: str) -> None:
     if payload:
-        await matcher.finish(render_help("hunt calendar"))
+        await matcher.finish(render_help("hu ca"))
     await matcher.finish(await fetch_puzzlendar())
 
 
@@ -116,7 +116,7 @@ async def _execute_caesar(matcher: type[Matcher], payload: str) -> None:
         content = payload
 
     if not content:
-        await matcher.finish(render_help("cipher caesar"))
+        await matcher.finish(render_help("ci cae"))
     await matcher.finish(caesar(content, shift))
 
 
@@ -127,7 +127,7 @@ async def _execute_vigenere(matcher: type[Matcher], payload: str) -> None:
         parts = payload.split()
 
     if len(parts) != 2:
-        await matcher.finish(render_help("cipher vigenere"))
+        await matcher.finish(render_help("ci vi"))
     await matcher.finish(CIPHER_FUNCS["vg"](parts))
 
 
