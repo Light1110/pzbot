@@ -225,7 +225,7 @@ COMMAND_GROUPS: dict[str, GroupSpec] = {
     ),
     "hu": GroupSpec(
         "hunt",
-        "比赛日程和队伍状态",
+        "比赛日程",
         {
             "ca": CommandSpec(
                 "calendar",
@@ -233,14 +233,6 @@ COMMAND_GROUPS: dict[str, GroupSpec] = {
                 "hu ca",
                 "hu ca",
                 "hunt_calendar",
-                requires_args=False,
-            ),
-            "st": CommandSpec(
-                "status",
-                "Hunt 期间的队伍状态（默认 bph）",
-                "hu st [赛事]",
-                "hu st bph",
-                "hunt_status",
                 requires_args=False,
             ),
         },

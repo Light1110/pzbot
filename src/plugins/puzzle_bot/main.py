@@ -13,7 +13,7 @@ from nonebot.adapters import Message
 
 from .help import COMMAND_GROUPS, DispatchRequest, render_help, resolve_group
 from .ciphers import CIPHER_FUNCS, caesar
-from .queries import fetch_puzzlendar, query_nutrimatic, query_nutrimatic_zh, fetch_hunt_status
+from .queries import fetch_puzzlendar, query_nutrimatic, query_nutrimatic_zh
 from .chinese_search import search_words, search_poems, search_lyrics, search_idioms, search_ht, search_classics
 
 logger = logging.getLogger(__name__)
@@ -101,11 +101,6 @@ async def _execute_hunt_calendar(matcher: type[Matcher], payload: str) -> None:
     await matcher.finish(await fetch_puzzlendar())
 
 
-async def _execute_hunt_status(matcher: type[Matcher], payload: str) -> None:
-    hunt = payload.lower() if payload else "bph"
-    await matcher.finish(fetch_hunt_status(hunt))
-
-
 async def _execute_caesar(matcher: type[Matcher], payload: str) -> None:
     parts = payload.split()
     shift = None
@@ -155,7 +150,6 @@ EXECUTORS: dict[str, Executor] = {
     "cipher_caesar": _execute_caesar,
     "cipher_vigenere": _execute_vigenere,
     "hunt_calendar": _execute_hunt_calendar,
-    "hunt_status": _execute_hunt_status,
 }
 
 

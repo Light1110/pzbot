@@ -217,28 +217,3 @@ async def query_nutrimatic_zh(expr: str) -> str:
         return f"Nutrimatic-zh 查询失败：{e}"
 
 
-# ===================== 比赛期间队伍状态查询 =====================
-
-# 各比赛状态查询接口模板（占位，需按实际比赛API调整）
-HUNT_STATUS_APIS = {
-    "bph": "https://example.com/bph/status",   # 需替换为真实地址
-    "gph": "https://example.com/gph/status",   # 需替换为真实地址
-    "pnku": "https://example.com/pnku/status", # 需替换为真实地址
-}
-
-
-def fetch_hunt_status(hunt: str) -> str:
-    """抓取指定比赛队伍状态"""
-    api_url = HUNT_STATUS_APIS.get(hunt.lower())
-    if not api_url:
-        return f"暂不支持 {hunt} 比赛的状态查询。"
-    try:
-        resp = requests.get(api_url, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        # 简单格式化JSON输出
-        return f"{hunt.upper()} 队伍状态：\n{json.dumps(data, ensure_ascii=False, indent=2)[:1000]}"
-    except requests.RequestException as e:
-        return f"查询 {hunt.upper()} 状态失败：{e}"
-    except json.JSONDecodeError:
-        return f"{hunt.upper()} 返回非JSON数据，请检查接口配置。"
