@@ -1,7 +1,7 @@
-import os
 import re
 import json
 import requests
+from nonebot import get_driver
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 
@@ -76,7 +76,13 @@ async def fetch_puzzlendar() -> str:
 # ===================== Nutrimatic 查询 =====================
 
 NUTRIMATIC_BASE = "https://nutrimatic.org/2024/"
-NUTRIMATIC_ZH_BASE = os.getenv("NUTRIMATIC_ZH_URL", "http://127.0.0.1:8081").rstrip("/")
+NUTRIMATIC_ZH_BASE = "http://127.0.0.1:8081"
+
+
+def _get_nutrimatic_zh_base() -> str:
+    """从 NoneBot 配置读取 nutrimatic-zh 服务地址。"""
+    configured_url = getattr(get_driver().config, "nutrimatic_zh_url", None)
+    return str(configured_url or NUTRIMATIC_ZH_BASE).rstrip("/")
 
 
 def _format_nutrimatic_results(expr: str, html: str, page: int) -> str:
@@ -152,11 +158,11 @@ def _format_zh_results(expr: str, events: List[dict]) -> str:
 
 
 async def query_nutrimatic_zh(expr: str) -> str:
-    """调用本地 nutrimatic-zh 服务查询中文正则"""
+    """调用 nutrimatic-zh 服务查询中文正则"""
     if not expr:
         return "用法：zn <中文正则表达式>"
 
-    base_url = f"{NUTRIMATIC_ZH_BASE}/api/search/stream"
+    base_url = f"{_get_nutrimatic_zh_base()}/api/search/stream"
     params = {"q": expr, "limit": 30}
 
     try:
@@ -204,8 +210,10 @@ async def query_nutrimatic_zh(expr: str) -> str:
                         break
             return _format_zh_results(expr, events)
     except requests.RequestException as e:
-        return f"Nutrimatic-zh 连接失败：{e}\n请确认本地服务已启动：nutrimatic-zh serve --index INDEX.ntri --bind 127.0.0.1:8081"
+        return f"Nutrimatic-zh 连接失败：{e}\n请检查 NUTRIMATIC_ZH_URL 配置及服务状态。"
     except Exception as e:
+        if AIOHTTP_AVAILABLE and isinstance(e, (aiohttp.ClientError, TimeoutError)):
+            return f"Nutrimatic-zh 连接失败：{e}\n请检查 NUTRIMATIC_ZH_URL 配置及服务状态。"
         return f"Nutrimatic-zh 查询失败：{e}"
 
 
