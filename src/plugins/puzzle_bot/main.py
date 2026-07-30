@@ -1,5 +1,5 @@
 import shlex
-from typing import List
+from collections.abc import Awaitable, Callable
 
 import logging
 
@@ -7,10 +7,11 @@ from nonebot import on_command, get_driver
 from nonebot.adapters.onebot.v11 import MessageEvent, GroupMessageEvent, PrivateMessageEvent
 from nonebot.message import event_preprocessor
 from nonebot.exception import IgnoredException
+from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.adapters import Message
 
-from .help import HELP_TEXT
+from .help import COMMAND_GROUPS, DispatchRequest, render_help, resolve_group
 from .ciphers import CIPHER_FUNCS, caesar
 from .queries import fetch_puzzlendar, query_nutrimatic, query_nutrimatic_zh, fetch_hunt_status
 from .chinese_search import search_words, search_poems, search_lyrics, search_idioms, search_ht, search_classics
@@ -47,235 +48,153 @@ async def check_message_permission(event: MessageEvent):
         raise IgnoredException("非群/私聊消息已忽略")
 
 
-# ===================== 帮助命令 =====================
+# ===================== 二级命令执行器 =====================
 
-hlp_cmd = on_command("hlp", aliases={"help", "帮助"}, priority=5, block=True)
-
-@hlp_cmd.handle()
-async def handle_hlp(event: MessageEvent):
-    await hlp_cmd.finish(HELP_TEXT)
+Executor = Callable[[type[Matcher], str], Awaitable[None]]
 
 
-# ===================== Puzzlendar 比赛日程查询 =====================
+def _text_search_executor(func: Callable[[str], str]) -> Executor:
+    async def execute(matcher: type[Matcher], payload: str) -> None:
+        await matcher.finish(func(payload))
 
-pc_cmd = on_command("pc", priority=5, block=True)
-
-@pc_cmd.handle()
-async def handle_pc(event: MessageEvent):
-    result = await fetch_puzzlendar()
-    await pc_cmd.finish(result)
+    return execute
 
 
-# ===================== Nutrimatic 查询 =====================
-
-nu_cmd = on_command("nu", priority=5, block=True)
-
-@nu_cmd.handle()
-async def handle_nu(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    if not arg_text:
-        await nu_cmd.finish("用法：nu <表达式> [-p 页码]")
-
-    # 解析 -p 页码
-    page = 0
-    parts = arg_text.split()
-    if "-p" in parts:
-        idx = parts.index("-p")
+def _cipher_executor(func: Callable[[str], object], name: str) -> Executor:
+    async def execute(matcher: type[Matcher], payload: str) -> None:
         try:
-            page = int(parts[idx + 1]) - 1  # 用户输入1-based
-            parts = parts[:idx]
+            result = func(payload)
+        except Exception:
+            logger.exception("命令 %s 处理失败", name)
+            await matcher.finish("处理出错，请检查输入格式。")
+        await matcher.finish(str(result))
+
+    return execute
+
+
+async def _execute_nu_en(matcher: type[Matcher], payload: str) -> None:
+    page = 0
+    parts = payload.split()
+    if "-p" in parts:
+        index = parts.index("-p")
+        try:
+            page = int(parts[index + 1]) - 1
         except (IndexError, ValueError):
-            await nu_cmd.finish("页码格式错误，用法：nu <表达式> [-p 页码]")
+            await matcher.finish("页码格式错误。\n\n" + render_help("nu en"))
+        parts = parts[:index]
 
-    expr = " ".join(parts)
-    await nu_cmd.send("Nutrimatic 查询中，请稍候...")
-    result = await query_nutrimatic(expr, max(0, page))
-    await nu_cmd.finish(result)
-
-
-# ===================== Nutrimatic 中文查询 =====================
-
-zn_cmd = on_command("zn", priority=5, block=True)
-
-@zn_cmd.handle()
-async def handle_zn(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    if not arg_text:
-        await zn_cmd.finish("用法：zn <中文正则表达式>")
-    await zn_cmd.send("Nutrimatic-zh 查询中，请稍候...")
-    result = await query_nutrimatic_zh(arg_text)
-    await zn_cmd.finish(result)
+    expression = " ".join(parts)
+    if not expression:
+        await matcher.finish(render_help("nu en"))
+    await matcher.send("Nutrimatic 查询中，请稍候...")
+    await matcher.finish(await query_nutrimatic(expression, max(0, page)))
 
 
-# ===================== 比赛状态查询 =====================
-
-now_cmd = on_command("now", priority=5, block=True)
-
-@now_cmd.handle()
-async def handle_now(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    hunt = arg_text.lower() if arg_text else "bph"  # 默认bph
-    result = fetch_hunt_status(hunt)
-    await now_cmd.finish(result)
+async def _execute_nu_zh(matcher: type[Matcher], payload: str) -> None:
+    await matcher.send("Nutrimatic-zh 查询中，请稍候...")
+    await matcher.finish(await query_nutrimatic_zh(payload))
 
 
-# ===================== 中文词语正则查询 =====================
-
-dc_cmd = on_command("dc", priority=5, block=True)
-
-@dc_cmd.handle()
-async def handle_dc(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    if not arg_text:
-        await dc_cmd.finish("用法：dc <模式>（. 表示任意一个汉字）")
-    result = search_words(arg_text)
-    await dc_cmd.finish(result)
+async def _execute_hunt_calendar(matcher: type[Matcher], payload: str) -> None:
+    if payload:
+        await matcher.finish(render_help("hunt calendar"))
+    await matcher.finish(await fetch_puzzlendar())
 
 
-# ===================== 中文诗词句子正则查询 =====================
-
-sc_cmd = on_command("sc", priority=5, block=True)
-
-@sc_cmd.handle()
-async def handle_sc(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    if not arg_text:
-        await sc_cmd.finish("用法：sc <模式>（. 表示任意一个汉字）")
-    result = search_poems(arg_text)
-    await sc_cmd.finish(result)
+async def _execute_hunt_status(matcher: type[Matcher], payload: str) -> None:
+    hunt = payload.lower() if payload else "bph"
+    await matcher.finish(fetch_hunt_status(hunt))
 
 
-# ===================== 歌词句子正则查询 =====================
-
-gc_cmd = on_command("gc", priority=5, block=True)
-
-@gc_cmd.handle()
-async def handle_gc(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    if not arg_text:
-        await gc_cmd.finish("用法：gc <模式>（. 表示任意一个字符）")
-    result = search_lyrics(arg_text)
-    await gc_cmd.finish(result)
-
-
-# ===================== 俗语/谚语正则查询 =====================
-
-sy_cmd = on_command("sy", priority=5, block=True)
-
-@sy_cmd.handle()
-async def handle_sy(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    if not arg_text:
-        await sy_cmd.finish("用法：sy <模式>（. 表示任意一个汉字）")
-    result = search_idioms(arg_text)
-    await sy_cmd.finish(result)
-
-
-yy_cmd = on_command("yy", priority=5, block=True)
-
-@yy_cmd.handle()
-async def handle_yy(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    if not arg_text:
-        await yy_cmd.finish("用法：yy <模式>（. 表示任意一个汉字）")
-    result = search_idioms(arg_text)
-    await yy_cmd.finish(result)
-
-
-# ===================== 合同查询 =====================
-
-ht_cmd = on_command("ht", priority=5, block=True)
-
-@ht_cmd.handle()
-async def handle_ht(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    if not arg_text:
-        await ht_cmd.finish("用法：ht <两字>（例如：ht 明亮）")
-    result = search_ht(arg_text)
-    await ht_cmd.finish(result)
-
-
-# ===================== 古文/经典查询 =====================
-
-gw_cmd = on_command("gw", priority=5, block=True)
-
-@gw_cmd.handle()
-async def handle_gw(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    if not arg_text:
-        await gw_cmd.finish("用法：gw <模式>（. 表示任意一个汉字）")
-    result = search_classics(arg_text)
-    await gw_cmd.finish(result)
-
-
-# ===================== 古典密码转换命令 =====================
-
-for _cmd_name, _func in CIPHER_FUNCS.items():
-    if _cmd_name in ("cs", "vg"):
-        continue  # 特殊处理
-    _cipher_cmd = on_command(_cmd_name, priority=5, block=True)
-
-    def _make_cipher_handler(fn, cmd, name):
-        async def handler(event: MessageEvent, args: Message = CommandArg()):
-            arg_text = args.extract_plain_text().strip()
-            if not arg_text:
-                await cmd.finish(f"用法：{name} <内容>")
-                return
-            try:
-                result = fn(arg_text)
-            except Exception:
-                logger.exception("命令 %s 处理失败", name)
-                await cmd.finish("处理出错，请检查输入格式。")
-                return
-            await cmd.finish(str(result))
-        return handler
-
-    _cipher_cmd.handle()(_make_cipher_handler(_func, _cipher_cmd, _cmd_name))
-
-
-# ===================== 凯撒特殊处理（支持可选移位） =====================
-
-cs_cmd = on_command("cs", priority=5, block=True)
-
-@cs_cmd.handle()
-async def handle_cs(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    if not arg_text:
-        await cs_cmd.finish("用法：cs <内容> [移位]")
-
-    parts = arg_text.split()
+async def _execute_caesar(matcher: type[Matcher], payload: str) -> None:
+    parts = payload.split()
     shift = None
-    # 如果最后一部分是整数，则视为移位量
-    if parts[-1].lstrip('-').isdigit():
+    if parts[-1].lstrip("-").isdigit():
         shift = int(parts[-1])
         content = " ".join(parts[:-1])
     else:
-        content = arg_text
+        content = payload
 
     if not content:
-        await cs_cmd.finish("用法：cs <内容> [移位]")
-
-    result = caesar(content, shift)
-    await cs_cmd.finish(result)
+        await matcher.finish(render_help("cipher caesar"))
+    await matcher.finish(caesar(content, shift))
 
 
-# ===================== 维吉尼亚特殊处理 =====================
-
-vg_cmd = on_command("vg", priority=5, block=True)
-
-@vg_cmd.handle()
-async def handle_vg(event: MessageEvent, args: Message = CommandArg()):
-    arg_text = args.extract_plain_text().strip()
-    if not arg_text:
-        await vg_cmd.finish("用法：vg <参数1> <参数2>（明文/密文/密钥选2项）")
-
+async def _execute_vigenere(matcher: type[Matcher], payload: str) -> None:
     try:
-        parts = shlex.split(arg_text)
+        parts = shlex.split(payload)
     except ValueError:
-        parts = arg_text.split()
+        parts = payload.split()
 
     if len(parts) != 2:
-        await vg_cmd.finish("用法：vg <参数1> <参数2>（明文/密文/密钥选2项）")
+        await matcher.finish(render_help("cipher vigenere"))
+    await matcher.finish(CIPHER_FUNCS["vg"](parts))
 
-    result = CIPHER_FUNCS["vg"](parts)
-    await vg_cmd.finish(result)
+
+EXECUTORS: dict[str, Executor] = {
+    "nu_en": _execute_nu_en,
+    "nu_zh": _execute_nu_zh,
+    "search_word": _text_search_executor(search_words),
+    "search_poem": _text_search_executor(search_poems),
+    "search_lyrics": _text_search_executor(search_lyrics),
+    "search_saying": _text_search_executor(search_idioms),
+    "search_contract": _text_search_executor(search_ht),
+    "search_classic": _text_search_executor(search_classics),
+    "cipher_morse": _cipher_executor(CIPHER_FUNCS["ms"], "cipher morse"),
+    "cipher_a1z26": _cipher_executor(CIPHER_FUNCS["az"], "cipher a1z26"),
+    "cipher_binary": _cipher_executor(CIPHER_FUNCS["bi"], "cipher binary"),
+    "cipher_ternary": _cipher_executor(CIPHER_FUNCS["tri"], "cipher ternary"),
+    "cipher_cantor": _cipher_executor(CIPHER_FUNCS["ct"], "cipher cantor"),
+    "cipher_polybius": _cipher_executor(CIPHER_FUNCS["cb"], "cipher polybius"),
+    "cipher_braille": _cipher_executor(CIPHER_FUNCS["br"], "cipher braille"),
+    "cipher_semaphore": _cipher_executor(CIPHER_FUNCS["smph"], "cipher semaphore"),
+    "cipher_dna": _cipher_executor(CIPHER_FUNCS["dna"], "cipher dna"),
+    "cipher_t9": _cipher_executor(CIPHER_FUNCS["9j"], "cipher t9"),
+    "cipher_wubi": _cipher_executor(CIPHER_FUNCS["wb"], "cipher wubi"),
+    "cipher_mixed": _cipher_executor(CIPHER_FUNCS["hh"], "cipher mixed"),
+    "cipher_caesar": _execute_caesar,
+    "cipher_vigenere": _execute_vigenere,
+    "hunt_calendar": _execute_hunt_calendar,
+    "hunt_status": _execute_hunt_status,
+}
+
+
+# ===================== 一级命令分发 =====================
+
+async def _dispatch_group(
+    matcher: type[Matcher], group_name: str, arg_text: str
+) -> None:
+    resolution = resolve_group(group_name, arg_text)
+    if isinstance(resolution, str):
+        await matcher.finish(resolution)
+    request: DispatchRequest = resolution
+    await EXECUTORS[request.command.handler_key](matcher, request.payload)
+
+
+ROOT_MATCHERS = {
+    group_name: on_command(
+        group_name, priority=5, block=True, force_whitespace=True
+    )
+    for group_name in COMMAND_GROUPS
+}
+
+
+def _make_group_handler(
+    matcher: type[Matcher], group_name: str
+) -> Callable[[Message], Awaitable[None]]:
+    async def handle(args: Message = CommandArg()) -> None:
+        await _dispatch_group(matcher, group_name, args.extract_plain_text())
+
+    return handle
+
+
+for _group_name, _matcher in ROOT_MATCHERS.items():
+    _matcher.handle()(_make_group_handler(_matcher, _group_name))
+
+
+help_cmd = on_command("help", priority=5, block=True, force_whitespace=True)
+
+
+@help_cmd.handle()
+async def handle_help(args: Message = CommandArg()) -> None:
+    await help_cmd.finish(render_help(args.extract_plain_text()))

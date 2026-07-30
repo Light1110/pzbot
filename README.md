@@ -32,13 +32,16 @@ NUTRIMATIC_ZH_URL=https://nutrimatic-zh.example.com
 
 ## 使用
 
-发送 `hlp`、`help` 或 `帮助` 查看完整命令列表。
+发送 `help` 查看精简的功能分类；发送 `help <功能域>` 查看该分类的全部子命令。
 
 ```text
-nu <表达式>       # Nutrimatic 英文查询
-dc <模式>         # 中文词语查询
-sc <模式>         # 中文诗词查询
-cs <内容> [移位]  # 凯撒密码转换或穷举
+nu en <表达式> [-p 页码]    # Nutrimatic 英文查询
+nu zh <中文正则表达式>      # Nutrimatic-zh 中文查询
+search poem <模式>          # 中文诗词查询
+cipher caesar <内容> [移位] # 凯撒密码转换或穷举
+hunt calendar               # 近期赛事日程
 ```
+
+例如，发送 `help search` 查看全部中文检索命令，发送 `help cipher morse` 查看摩斯密码的详细用法。
 
 实际命令前缀取决于你的 NoneBot 配置。
