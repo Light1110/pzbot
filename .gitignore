@@ -6,6 +6,9 @@
 # Local launcher
 bot.py
 
+# Local design notes
+docs/superpowers/
+
 # Virtual environments
 .venv/
 venv/
