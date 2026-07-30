@@ -1,0 +1,4 @@
+[tool.nonebot]
+plugins = []
+plugin_dirs = ["src/plugins"]
+builtin_plugins = ["echo"]
