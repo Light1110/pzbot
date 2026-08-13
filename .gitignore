@@ -34,3 +34,9 @@ Thumbs.db
 *.log
 *.sqlite
 *.sqlite3
+
+# Sourced corpora (see data/README.md). Keep docs, scripts, and original compilations.
+data/*
+!data/README.md
+!data/prepare.py
+!data/hand_classics.json

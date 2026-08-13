@@ -17,6 +17,7 @@
    pip install -r requirements.txt
   ```
 3. 确保 NoneBot 配置中的 `plugin_dirs` 包含该插件所在目录。
+4. 如需中文检索或五笔转换，在仓库根目录执行 `python data/prepare.py`，将语料放到 `data/`。细节见 [`data/README.md`](data/README.md)。
 
 ## 配置
 
@@ -29,6 +30,10 @@ NUTRIMATIC_ZH_URL=https://nutrimatic-zh.example.com
 本地部署时，服务根地址可配置为 `http://127.0.0.1:8081`。
 
 不使用该功能时无需额外配置。
+
+## 数据
+
+`se`（本地中文检索）和 `ci wb`（五笔）依赖 `data/` 下的语料。在仓库根目录执行 `python data/prepare.py` 即可下载并整理；文件列表、来源和分步说明见 [`data/README.md`](data/README.md)。未放置对应文件时，相关命令会提示数据缺失。
 
 ## 使用
 

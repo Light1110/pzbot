@@ -1,7 +1,6 @@
 import csv
 import json
 import math
-import os
 import re
 from pathlib import Path
 from typing import List, Tuple
@@ -11,13 +10,24 @@ from zhconv import convert
 # ===================== 本地中文语料正则查询 =====================
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-WORDS_FILE = BASE_DIR / "data" / "words.txt"
-POEMS_DIR = BASE_DIR / "data" / "poems"
-CLASSICS_DIR = BASE_DIR / "data" / "chinese-poetry-ext"
-HAND_CLASSICS_FILE = BASE_DIR / "data" / "hand_classics.json"
-LYRICS_FILE = BASE_DIR / "data" / "lyrics.csv"
-IDIOMS_FILE = BASE_DIR / "data" / "idioms.csv"
+DATA_DIR = BASE_DIR / "data"
+WORDS_FILE = DATA_DIR / "words.txt"
+CLASSICS_DIR = DATA_DIR / "chinese-poetry"
+HAND_CLASSICS_FILE = DATA_DIR / "hand_classics.json"
+LYRICS_FILE = DATA_DIR / "lyrics.csv"
+IDIOMS_FILE = DATA_DIR / "idioms.csv"
 COMPONENTS_FILE = BASE_DIR / "nutrimatic-zh" / "data" / "chinese" / "factorHan.js"
+
+
+def _iter_poem_json_files() -> List[Path]:
+    files: List[Path] = []
+    tang = CLASSICS_DIR / "全唐诗"
+    ci = CLASSICS_DIR / "宋词"
+    if tang.exists():
+        files.extend(sorted(tang.glob("poet.tang.*.json")))
+    if ci.exists():
+        files.extend(sorted(ci.glob("ci.song.*.json")))
+    return files
 
 
 # ===================== 汉字部件查询 =====================
@@ -184,7 +194,7 @@ def _load_words() -> List[Tuple[str, float]]:
             line = line.strip()
             if not line:
                 continue
-            parts = line.split("\t")
+            parts = line.split()
             if parts:
                 word = parts[0].strip()
                 # 过滤掉非纯汉字的词（保留含汉字的即可）
@@ -200,10 +210,11 @@ def _load_words() -> List[Tuple[str, float]]:
 def _load_poems() -> List[Tuple[str, str, str]]:
     """加载本地诗词库，返回 (诗句, 作者, 标题) 列表（统一转换为简体）"""
     poems = []
-    if not POEMS_DIR.exists():
+    poem_files = _iter_poem_json_files()
+    if not poem_files:
         return poems
 
-    for file_path in POEMS_DIR.glob("*.json"):
+    for file_path in poem_files:
         try:
             with file_path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -289,21 +300,20 @@ def _flatten_paragraphs(node, author: str, title: str, results: list, is_prose: 
 def _load_classics_poems() -> List[Tuple[str, str, str]]:
     """加载 chinese-poetry 扩展诗词库，返回 (诗句, 作者, 标题)"""
     poems: List[Tuple[str, str, str]] = []
-    if not CLASSICS_DIR.exists():
-        return poems
-
-    poem_files = [
-        CLASSICS_DIR / "诗经" / "shijing.json",
-        CLASSICS_DIR / "楚辞" / "chuci.json",
-        CLASSICS_DIR / "元曲" / "yuanqu.json",
-        CLASSICS_DIR / "幽梦影" / "youmengying.json",
-        CLASSICS_DIR / "曹操诗集" / "caocao.json",
-        CLASSICS_DIR / "纳兰性德" / "纳兰性德诗集.json",
-        CLASSICS_DIR / "蒙学" / "qianjiashi.json",
-        CLASSICS_DIR / "蒙学" / "tangshisanbaishou.json",
-        CLASSICS_DIR / "五代诗词" / "nantang" / "poetrys.json",
-        HAND_CLASSICS_FILE,
-    ]
+    classics = CLASSICS_DIR
+    poem_files = [HAND_CLASSICS_FILE]
+    if classics.exists():
+        poem_files[0:0] = [
+            classics / "诗经" / "shijing.json",
+            classics / "楚辞" / "chuci.json",
+            classics / "元曲" / "yuanqu.json",
+            classics / "幽梦影" / "youmengying.json",
+            classics / "曹操诗集" / "caocao.json",
+            classics / "纳兰性德" / "纳兰性德诗集.json",
+            classics / "蒙学" / "qianjiashi.json",
+            classics / "蒙学" / "tangshisanbaishou.json",
+            classics / "五代诗词" / "nantang" / "poetrys.json",
+        ]
 
     for file_path in poem_files:
         if not file_path.exists():
@@ -316,7 +326,7 @@ def _load_classics_poems() -> List[Tuple[str, str, str]]:
             continue
 
     # 花间集是多文件
-    huajianji_dir = CLASSICS_DIR / "五代诗词" / "huajianji"
+    huajianji_dir = classics / "五代诗词" / "huajianji"
     if huajianji_dir.exists():
         for file_path in huajianji_dir.glob("huajianji-*-juan.json"):
             try:
@@ -417,25 +427,26 @@ def _load_novels() -> List[Tuple[str, str, str, str]]:
 def _load_classics_prose() -> List[Tuple[str, str, str, str]]:
     """加载古文/经典文本，返回 (段落, 作者, 标题, 来源)"""
     prose: List[Tuple[str, str, str, str]] = []
-    if not CLASSICS_DIR.exists():
+    classics = CLASSICS_DIR
+    if not classics.exists():
         return prose
 
     prose_files = [
-        (CLASSICS_DIR / "四书五经" / "daxue.json", "四书五经"),
-        (CLASSICS_DIR / "四书五经" / "mengzi.json", "四书五经"),
-        (CLASSICS_DIR / "四书五经" / "zhongyong.json", "四书五经"),
-        (CLASSICS_DIR / "论语" / "lunyu.json", "论语"),
-        (CLASSICS_DIR / "蒙学" / "dizigui.json", "蒙学"),
-        (CLASSICS_DIR / "蒙学" / "qianziwen.json", "蒙学"),
-        (CLASSICS_DIR / "蒙学" / "sanzijing-new.json", "蒙学"),
-        (CLASSICS_DIR / "蒙学" / "sanzijing-traditional.json", "蒙学"),
-        (CLASSICS_DIR / "蒙学" / "shenglvqimeng.json", "蒙学"),
-        (CLASSICS_DIR / "蒙学" / "wenzimengqiu.json", "蒙学"),
-        (CLASSICS_DIR / "蒙学" / "youxueqionglin.json", "蒙学"),
-        (CLASSICS_DIR / "蒙学" / "zengguangxianwen.json", "蒙学"),
-        (CLASSICS_DIR / "蒙学" / "zhuzijiaxun.json", "蒙学"),
-        (CLASSICS_DIR / "蒙学" / "baijiaxing.json", "蒙学"),
-        (CLASSICS_DIR / "蒙学" / "guwenguanzhi.json", "古文观止"),
+        (classics / "四书五经" / "daxue.json", "四书五经"),
+        (classics / "四书五经" / "mengzi.json", "四书五经"),
+        (classics / "四书五经" / "zhongyong.json", "四书五经"),
+        (classics / "论语" / "lunyu.json", "论语"),
+        (classics / "蒙学" / "dizigui.json", "蒙学"),
+        (classics / "蒙学" / "qianziwen.json", "蒙学"),
+        (classics / "蒙学" / "sanzijing-new.json", "蒙学"),
+        (classics / "蒙学" / "sanzijing-traditional.json", "蒙学"),
+        (classics / "蒙学" / "shenglvqimeng.json", "蒙学"),
+        (classics / "蒙学" / "wenzimengqiu.json", "蒙学"),
+        (classics / "蒙学" / "youxueqionglin.json", "蒙学"),
+        (classics / "蒙学" / "zengguangxianwen.json", "蒙学"),
+        (classics / "蒙学" / "zhuzijiaxun.json", "蒙学"),
+        (classics / "蒙学" / "baijiaxing.json", "蒙学"),
+        (classics / "蒙学" / "guwenguanzhi.json", "古文观止"),
     ]
 
     for file_path, source in prose_files:
@@ -734,7 +745,7 @@ def search_poems(pattern: str, max_results: int = 30) -> str:
 
     poems = _get_poems()
     if not poems:
-        return "本地诗词库未找到，请检查 data/poems/ 目录是否存在。"
+        return "本地诗词库未找到，请检查 data/chinese-poetry/ 目录是否存在。"
 
     regex = re.compile(_pattern_to_regex(pattern))
     # 按 (诗句, 作者) 去重，保留标题信息量最大的那个
@@ -888,7 +899,7 @@ def search_classics(pattern: str, max_results: int = 30) -> str:
 
     prose = _get_classics_prose()
     if not prose:
-        return "本地古文库未找到，请检查 data/chinese-poetry-ext/ 目录是否存在。"
+        return "本地古文库未找到，请检查 data/chinese-poetry/ 目录是否存在。"
 
     # 古文允许在长段落中搜索子串，因此不需要 ^$
     regex = re.compile(_pattern_to_regex(pattern, full_match=False))
