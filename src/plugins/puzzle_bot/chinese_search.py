@@ -477,7 +477,7 @@ def _load_lyrics() -> List[Tuple[str, str, str]]:
         return lyrics
 
     with LYRICS_FILE.open("r", encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
+        reader = csv.DictReader(f, escapechar="\\")
         for row in reader:
             try:
                 title = row.get("title", "未知歌曲").strip()

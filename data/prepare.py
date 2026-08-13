@@ -133,8 +133,8 @@ def lyrics_from_zip(data: bytes) -> List[Dict[str, str]]:
                 {
                     "title": title or "未知歌曲",
                     "author": author or "未知歌手",
-                    "text": raw.strip(),
-                    "clean_text": clean_lyric_text(raw),
+                    "text": raw.strip().replace("\0", ""),
+                    "clean_text": clean_lyric_text(raw).replace("\0", ""),
                 }
             )
     return rows
@@ -227,7 +227,13 @@ def prepare_lyrics(dest: Path) -> None:
     rows = lyrics_from_zip(download(LYRICS_ZIP_URL))
     dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=["title", "author", "text", "clean_text"])
+        writer = csv.DictWriter(
+            fh,
+            fieldnames=["title", "author", "text", "clean_text"],
+            lineterminator="\n",
+            quoting=csv.QUOTE_MINIMAL,
+            escapechar="\\",
+        )
         writer.writeheader()
         writer.writerows(rows)
     log(f"wrote {dest.relative_to(DATA_DIR)} ({len(rows)} songs, {dest.stat().st_size} bytes)")
