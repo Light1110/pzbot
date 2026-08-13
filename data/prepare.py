@@ -10,14 +10,16 @@ import json
 import re
 import subprocess
 import sys
+import time
 import urllib.request
 import zipfile
+from http.client import IncompleteRead
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
 from urllib.parse import quote, urlsplit, urlunsplit
 
 DATA_DIR = Path(__file__).resolve().parent
-USER_AGENT = "pzbot-data-prepare/1.0"
+USER_AGENT = "Mozilla/5.0 (compatible; pzbot-data-prepare/1.0)"
 
 WORDS_URL = (
     "https://raw.githubusercontent.com/liangqi/chinese-frequency-word-list"
@@ -48,11 +50,19 @@ POETRY_SPARSE_PATTERNS = [
     "论语/",
 ]
 
+def gutenberg_urls(ebook_id: int) -> List[str]:
+    return [
+        f"https://www.gutenberg.org/files/{ebook_id}/{ebook_id}-0.txt",
+        f"https://www.gutenberg.org/cache/epub/{ebook_id}/pg{ebook_id}.txt",
+        f"https://www.gutenberg.org/ebooks/{ebook_id}.txt.utf-8",
+    ]
+
+
 NOVEL_URLS = {
-    "三国演义.txt": "https://www.gutenberg.org/files/23950/23950-0.txt",
-    "西游记.txt": "https://www.gutenberg.org/files/23962/23962-0.txt",
-    "水浒传.txt": "https://www.gutenberg.org/files/23863/23863-0.txt",
-    "红楼梦.txt": "https://www.gutenberg.org/files/24264/24264-0.txt",
+    "三国演义.txt": gutenberg_urls(23950),
+    "西游记.txt": gutenberg_urls(23962),
+    "水浒传.txt": gutenberg_urls(23863),
+    "红楼梦.txt": gutenberg_urls(24264),
 }
 
 _ID_SUFFIX = re.compile(r"_\d+$")
@@ -150,10 +160,32 @@ def log(message: str) -> None:
     print(message, flush=True)
 
 
-def download(url: str) -> bytes:
-    request = urllib.request.Request(quote_url(url), headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=180) as response:
-        return response.read()
+def download(url: str, retries: int = 5, delay: float = 1.5) -> bytes:
+    last_error: Exception | None = None
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "*/*",
+        "Connection": "close",
+    }
+    for attempt in range(1, retries + 1):
+        try:
+            request = urllib.request.Request(quote_url(url), headers=headers)
+            with urllib.request.urlopen(request, timeout=180) as response:
+                chunks: List[bytes] = []
+                while True:
+                    chunk = response.read(64 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                return b"".join(chunks)
+        except (IncompleteRead, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt < retries:
+                wait = delay * attempt
+                log(f"download retry {attempt}/{retries} ({url}): {exc}; wait {wait:.1f}s")
+                if wait:
+                    time.sleep(wait)
+    raise last_error or RuntimeError(f"download failed: {url}")
 
 
 def download_first(urls: Sequence[str]) -> bytes:
@@ -247,11 +279,21 @@ def prepare_poetry(dest: Path) -> None:
 def prepare_novels(poetry_root: Path) -> None:
     novels_dir = poetry_root / "四大名著"
     novels_dir.mkdir(parents=True, exist_ok=True)
-    for filename, url in NOVEL_URLS.items():
+    errors: List[str] = []
+    for filename, urls in NOVEL_URLS.items():
         dest = novels_dir / filename
+        if dest.exists() and dest.stat().st_size > 50_000:
+            log(f"skip existing {filename} ({dest.stat().st_size} bytes)")
+            continue
         log(f"fetching {filename}")
-        text = download(url).decode("utf-8", errors="replace")
-        write_text(dest, text)
+        try:
+            text = download_first(urls).decode("utf-8", errors="replace")
+            write_text(dest, text)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{filename}: {exc}")
+            log(f"failed {filename}: {exc}")
+    if errors:
+        raise RuntimeError("novels failed: " + "; ".join(errors))
 
 
 def parse_only(value: str) -> List[str]:
