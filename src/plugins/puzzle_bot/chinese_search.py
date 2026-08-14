@@ -7,6 +7,8 @@ from typing import List, Tuple
 
 from zhconv import convert
 
+from .zi_tools import NZ_B_RE, ZiToolsError, cache_get, normalize_components
+
 # ===================== 本地中文语料正则查询 =====================
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -16,7 +18,6 @@ CLASSICS_DIR = DATA_DIR / "chinese-poetry"
 HAND_CLASSICS_FILE = DATA_DIR / "hand_classics.json"
 LYRICS_FILE = DATA_DIR / "lyrics.csv"
 IDIOMS_FILE = DATA_DIR / "idioms.csv"
-COMPONENTS_FILE = BASE_DIR / "nutrimatic-zh" / "data" / "chinese" / "factorHan.js"
 
 
 def _iter_poem_json_files() -> List[Path]:
@@ -32,69 +33,13 @@ def _iter_poem_json_files() -> List[Path]:
 
 # ===================== 汉字部件查询 =====================
 
-_COMPONENTS_DIRECT: dict = {}
-_COMPONENTS_CACHE: dict = {}
-
-
-def _load_components() -> dict:
-    """解析 factorHan.js，返回 char -> [直接部件分解列表] 的映射"""
-    global _COMPONENTS_DIRECT
-    if _COMPONENTS_DIRECT:
-        return _COMPONENTS_DIRECT
-    if not COMPONENTS_FILE.exists():
-        return {}
-
-    text = COMPONENTS_FILE.read_text(encoding="utf-8").strip()
-    # 去掉 const hanzi=` ... ` 包裹
-    if text.startswith("const hanzi=`"):
-        text = text[len("const hanzi=`"):]
-    if text.endswith("`"):
-        text = text[:-1]
-
-    direct: dict = {}
-    for line in text.split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-        if "|" not in line:
-            direct[line] = []
-        else:
-            parts = line.split("|")
-            direct[parts[0]] = parts[1:]
-    _COMPONENTS_DIRECT = direct
-    return direct
-
-
-def _get_all_components(ch: str) -> set:
-    """递归获取某个汉字包含的所有部件（含子部件）"""
-    global _COMPONENTS_CACHE
-    if not _COMPONENTS_CACHE:
-        _load_components()
-    if ch in _COMPONENTS_CACHE:
-        return _COMPONENTS_CACHE[ch]
-
-    direct = _COMPONENTS_DIRECT.get(ch, [])
-    result = set()
-    for decomp in direct:
-        for c in decomp:
-            result.add(c)
-            if c in _COMPONENTS_DIRECT:
-                result |= _get_all_components(c)
-    _COMPONENTS_CACHE[ch] = result
-    return result
-
-
 def _get_chars_with_components(comps: List[str]) -> List[str]:
-    """返回包含所有指定部件的汉字列表"""
-    if not comps:
-        return []
-    _load_components()
-    result = []
-    for ch in _COMPONENTS_DIRECT:
-        char_comps = _get_all_components(ch)
-        if all(c in char_comps for c in comps):
-            result.append(ch)
-    return result
+    """从字统预取缓存取出含指定部件的汉字。缓存未命中视为实现错误。"""
+    key = frozenset(comps)
+    chars = cache_get(key)
+    if chars is None:
+        raise ZiToolsError("部件查询缓存未就绪")
+    return chars
 
 
 def _char_class(chars: List[str]) -> str:
@@ -115,16 +60,25 @@ def _expand_nz(pattern: str) -> str:
     会连同外层括号一起替换为字符类，避免括号被转义为字面量。
     """
     def replace(match: re.Match) -> str:
-        comp_str = match.group(1) or match.group(2)
-        # 每个部件视为一个字符
-        comps = [c for c in comp_str if c.strip()]
+        comp_str = match.group(1) or match.group(2) or ""
+        comps = normalize_components(comp_str)
         chars = _get_chars_with_components(comps)
         if not chars:
             # 没有匹配字符时返回不可能匹配的类
             return "[\u0000]"
         return _char_class(chars)
 
-    return re.sub(r"\(nz@b\(([^)]+)\)\)|nz@b\(([^)]+)\)", replace, pattern)
+    return NZ_B_RE.sub(replace, pattern)
+
+
+async def run_search_with_nz(func, payload: str) -> str:
+    from .zi_tools import ZiToolsError, extract_component_groups, prefetch_components
+    try:
+        if extract_component_groups(payload):
+            await prefetch_components(payload)
+        return func(payload)
+    except ZiToolsError as exc:
+        return f"字统部件查询失败：{exc}"
 
 
 def _pattern_to_regex(pattern: str, full_match: bool = True) -> str:

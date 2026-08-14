@@ -31,6 +31,12 @@ NUTRIMATIC_ZH_URL=https://nutrimatic-zh.example.com
 
 不使用该功能时无需额外配置。
 
+`se` 模式中的 `nz@b(部件...)` 会查询字统网以展开部件。默认访问 `https://zi.tools`。可选覆盖：
+
+```env
+ZI_TOOLS_URL=https://zi.tools
+```
+
 可以配置向特定用户发送反馈信息：
 
 ```env

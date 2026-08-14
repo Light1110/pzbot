@@ -20,7 +20,7 @@ from .help import COMMAND_GROUPS, DispatchRequest, render_help, resolve_group
 from .feedback import handle_feedback, is_enabled
 from .ciphers import CIPHER_FUNCS, caesar
 from .queries import fetch_puzzlendar, query_nutrimatic, query_nutrimatic_zh
-from .chinese_search import search_words, search_poems, search_lyrics, search_idioms, search_ht, search_classics
+from .chinese_search import search_words, search_poems, search_lyrics, search_idioms, search_ht, search_classics, run_search_with_nz
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,10 @@ Executor = Callable[[type[Matcher], str], Awaitable[None]]
 
 def _text_search_executor(func: Callable[[str], str]) -> Executor:
     async def execute(matcher: type[Matcher], payload: str) -> None:
-        await matcher.finish(func(payload))
+        from .zi_tools import extract_component_groups
+        if extract_component_groups(payload):
+            await matcher.send("部件查询中，请稍候...")
+        await matcher.finish(await run_search_with_nz(func, payload))
 
     return execute
 
