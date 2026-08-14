@@ -31,6 +31,14 @@ NUTRIMATIC_ZH_URL=https://nutrimatic-zh.example.com
 
 不使用该功能时无需额外配置。
 
+可以配置向特定用户发送反馈信息：
+
+```env
+FEEDBACK_AUTHOR_QQ=123456789
+```
+
+对应 QQ 用户需要先加机器人为好友，否则私聊会失败。
+
 ## 数据
 
 `se`（本地中文检索）和 `ci wb`（五笔）依赖 `data/` 下的语料。在仓库根目录执行 `python data/prepare.py` 即可下载并整理；文件列表、来源和分步说明见 [`data/README.md`](data/README.md)。未放置对应文件时，相关命令会提示数据缺失。
@@ -45,6 +53,7 @@ nu zh <中文正则表达式>    # nutrimatic zhongwen
 se po <模式>              # search poem
 ci cae <内容> [移位]      # cipher caesar
 hu ca                     # hunt calendar
+fb <内容>                 # send feedback
 ```
 
 例如，发送 `help se` 查看全部中文检索命令，发送 `help ci mo` 查看摩斯密码的详细用法。

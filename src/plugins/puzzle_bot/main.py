@@ -4,7 +4,12 @@ from collections.abc import Awaitable, Callable
 import logging
 
 from nonebot import on_command, get_driver
-from nonebot.adapters.onebot.v11 import MessageEvent, GroupMessageEvent, PrivateMessageEvent
+from nonebot.adapters.onebot.v11 import (
+    Bot,
+    MessageEvent,
+    GroupMessageEvent,
+    PrivateMessageEvent,
+)
 from nonebot.message import event_preprocessor
 from nonebot.exception import IgnoredException
 from nonebot.matcher import Matcher
@@ -12,6 +17,7 @@ from nonebot.params import CommandArg
 from nonebot.adapters import Message
 
 from .help import COMMAND_GROUPS, DispatchRequest, render_help, resolve_group
+from .feedback import handle_feedback, is_enabled
 from .ciphers import CIPHER_FUNCS, caesar
 from .queries import fetch_puzzlendar, query_nutrimatic, query_nutrimatic_zh
 from .chinese_search import search_words, search_poems, search_lyrics, search_idioms, search_ht, search_classics
@@ -192,3 +198,22 @@ help_cmd = on_command("help", priority=5, block=True, force_whitespace=True)
 @help_cmd.handle()
 async def handle_help(args: Message = CommandArg()) -> None:
     await help_cmd.finish(render_help(args.extract_plain_text()))
+
+
+if is_enabled():
+    fb_cmd = on_command("fb", priority=5, block=True, force_whitespace=True)
+
+    @fb_cmd.handle()
+    async def handle_fb(
+        bot: Bot, event: MessageEvent, args: Message = CommandArg()
+    ) -> None:
+        group_id = (
+            event.group_id if isinstance(event, GroupMessageEvent) else None
+        )
+        reply = await handle_feedback(
+            bot,
+            args.extract_plain_text(),
+            event.user_id,
+            group_id,
+        )
+        await fb_cmd.finish(reply)

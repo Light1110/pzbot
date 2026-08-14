@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 
+from .feedback import help_home_line, is_enabled, render_fb_help
+
 
 @dataclass(frozen=True)
 class CommandSpec:
@@ -246,6 +248,8 @@ def render_home() -> str:
         f"• {abbreviation}（{group.name}）：{group.summary}"
         for abbreviation, group in COMMAND_GROUPS.items()
     )
+    if is_enabled():
+        lines.append(help_home_line())
     lines.append("使用 help <功能域> 查看分类详情。")
     return "\n".join(lines)
 
@@ -283,6 +287,9 @@ def render_help(query: str) -> str:
     parts = query.strip().lower().split()
     if not parts:
         return render_home()
+
+    if parts[0] == "fb" and is_enabled():
+        return render_fb_help()
 
     group = COMMAND_GROUPS.get(parts[0])
     if group is None:

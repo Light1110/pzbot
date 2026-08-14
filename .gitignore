@@ -9,6 +9,9 @@ bot.py
 # Local design notes
 docs/superpowers/
 
+# Local tests
+tests/
+
 # Virtual environments
 .venv/
 venv/
